@@ -11,6 +11,8 @@ Install the requirements
 
     pip install -r requirements.txt
 
-and execute `python main.py`.
+and execute `python download.py <workdir>`.
+
+To coregister use `python coregister.py <workdir>`.
 
 [RIRE]: http://www.insight-journal.org/rire
