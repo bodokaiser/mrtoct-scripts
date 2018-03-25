@@ -1,9 +1,6 @@
 # MRtoCT
 
-Preprocessing script for MRI to CT synthesis.
-
-1. Downloads and unpacks `CT` and `MR_T1` [RIRE][RIRE] data
-2. Coregisters `MR_T1` with `CT` and saves them as `NIfTI-1`
+Preprocessing script for MRI to CT synthesis [RIRE][RIRE] dataset.
 
 ## Usage
 
@@ -13,6 +10,7 @@ Install the requirements
 
 and execute `python download.py <workdir>`.
 
-To coregister use `python coregister.py <workdir>`.
+To coregister use `python coregister.py <workdir>`. To remove background
+noise use `python denoise.py <workdir>`.
 
 [RIRE]: http://www.insight-journal.org/rire
