@@ -11,6 +11,16 @@ import SimpleITK as sitk
 from scrapy.crawler import CrawlerProcess
 
 
+def _subjectstr(subject):
+  prefix, number = subject.split('_')[:2]
+
+  return prefix[0] + number
+
+
+def _modalitystr(modality):
+  return modality.split('_')[-1].lower()
+
+
 class RIRE(scrapy.Spider):
 
   name = 'RIRE'
@@ -40,16 +50,16 @@ class RIRE(scrapy.Spider):
       yield {name: files}
 
 
-def download(workdir):
+def download(rootdir, modalities):
   answer = input('Did you read and accept the RIRE licence aggreement? (y/n)')
 
   if answer != 'y':
     exit()
 
-  if not os.path.exists(workdir):
-    os.makedirs(workdir)
+  if not os.path.exists(rootdir):
+    os.makedirs(rootdir)
 
-    print(f'created {workdir}')
+    print(f'created {rootdir}')
 
   tempdir = tempfile.gettempdir()
   jsonfile = os.path.join(tempdir, 'cache.json')
@@ -63,51 +73,54 @@ def download(workdir):
     process.crawl(RIRE)
     process.start()
 
-    print(f'crawled data')
+    print(f'crawled data\n')
 
   with open(jsonfile) as f:
     data = json.loads(f.read())
 
   for d in data:
-    for patient, modalities in d.items():
-      pdir = os.path.join(tempdir, patient)
+    for subject, archives in d.items():
+      subjectdir = os.path.join(tempdir, subject)
 
-      if not os.path.exists(pdir):
-        os.makedirs(pdir)
-      print(f'{patient}:')
+      if not os.path.exists(subjectdir):
+        os.makedirs(subjectdir)
+      print(f'{subject}:')
 
-      for modality in ['ct', 'mr_T1']:
-        mdir = os.path.join(pdir, modality)
+      for modality in archives:
+        modalitydir = os.path.join(subjectdir, modality)
 
         if modality not in modalities:
           continue
 
-        if not os.path.exists(mdir):
-          response = requests.get(modalities[modality])
-          print(f'-> downloaded {modality} archive')
+        if not os.path.exists(modalitydir):
+          response = requests.get(archives[modality])
+          print(f'-> downloaded {modality}')
 
           archive = tarfile.open(fileobj=io.BytesIO(response.content))
-          archive.extractall(pdir)
-          print(f'-> extracted {modality} archive')
+          archive.extractall(subjectdir)
+          print(f'-> extracted {modality}')
 
-        bin_path = os.path.join(mdir, 'image.bin')
-        if not os.path.exists(bin_path):
-          os.system(f'gunzip {bin_path}.Z')
-          print(f'-> uncompressed {modality} volume')
+        imagepath = os.path.join(modalitydir, 'image.bin')
+        if not os.path.exists(imagepath):
+          os.system(f'gunzip {imagepath}.Z')
+          print(f'-> unzipped {modality}')
 
-        source_path = os.path.join(mdir, f'{patient}_{modality}.mhd')
-        target_path = os.path.join(workdir, f'{patient}_{modality}.nii')
+        source_path = os.path.join(modalitydir, f'{subject}_{modality}.mhd')
+        target_path = os.path.join(
+            rootdir, f'{_subjectstr(subject)}_{_modalitystr(modality)}.nii')
+
         if not os.path.exists(target_path):
           sitk.WriteImage(sitk.ReadImage(source_path), target_path)
-          print(f'-> converted {modality} mhd to nii')
+          print(f'-> converted {modality}')
 
 
 def main(args):
-  download(args.workdir)
+  download(args.rootdir, args.modalities)
 
 
 if __name__ == '__main__':
   parser = argparse.ArgumentParser()
-  parser.add_argument('workdir')
+  parser.add_argument('rootdir')
+  parser.add_argument('--modalities', default=['ct', 'mr_T1', 'mr_T2'])
 
   main(parser.parse_args())
