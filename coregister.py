@@ -3,7 +3,22 @@ import argparse
 import SimpleITK as sitk
 
 
-def coregister(workdir, fixed, moving, resampled):
+def _parse(rootdir):
+  filenames = [f for f in os.listdir(rootdir) if f.endswith('.nii')]
+  filenames.sort()
+  filetree = {}
+
+  for filename in filenames:
+    subject, modality = filename.split('.').pop(0).split('_')[:2]
+
+    if subject not in filetree:
+      filetree[subject] = {}
+    filetree[subject][modality] = filename
+
+  return filetree
+
+
+def coregister(rootdir, fixed_modality, moving_modality):
   rmethod = sitk.ImageRegistrationMethod()
   rmethod.SetMetricAsMattesMutualInformation(numberOfHistogramBins=100)
   rmethod.SetMetricSamplingStrategy(rmethod.RANDOM)
@@ -18,64 +33,46 @@ def coregister(workdir, fixed, moving, resampled):
   rmethod.SetSmoothingSigmasPerLevel(smoothingSigmas=[2, 1, 0])
   rmethod.SmoothingSigmasAreSpecifiedInPhysicalUnitsOn()
 
-  filenames = [f for f in os.listdir(workdir) if f.endswith('.nii')]
-  filenames.sort()
+  filetree = _parse(rootdir)
 
-  data = {}
+  for subject, modalities in filetree.items():
+    print(f'{subject}:')
 
-  for fname in filenames:
-    sparts = fname.split('.').pop(0).split('_')
-    patient = '_'.join(sparts[:2])
-    modality = '_'.join(sparts[2:])
-
-    if patient not in data:
-      data[patient] = {}
-
-    data[patient][modality] = fname
-
-  for patient, modalities in data.items():
-    print(f'{patient}:')
-
-    if fixed not in modalities or moving not in modalities:
+    if fixed_modality not in modalities or moving_modality not in modalities:
       print('-> incomplete')
       continue
 
-    fpath = os.path.join(workdir, modalities[fixed])
-    mpath = os.path.join(workdir, modalities[moving])
-    rpath = os.path.join(workdir, f'{patient}_{resampled}.nii')
+    fixed_path = os.path.join(rootdir, modalities[fixed_modality])
+    moving_path = os.path.join(rootdir, modalities[moving_modality])
 
-    fimage = sitk.ReadImage(fpath, sitk.sitkFloat32)
-    mimage = sitk.ReadImage(mpath, sitk.sitkFloat32)
-
-    if os.path.exists(rpath):
-      print('-> complete')
-      continue
+    fixed_image = sitk.ReadImage(fixed_path, sitk.sitkFloat32)
+    moving_image = sitk.ReadImage(moving_path, sitk.sitkFloat32)
 
     initial_transform = sitk.CenteredTransformInitializer(
-        fimage, mimage, sitk.Euler3DTransform(),
+        fixed_image, moving_image, sitk.Euler3DTransform(),
         sitk.CenteredTransformInitializerFilter.GEOMETRY)
     rmethod.SetInitialTransform(initial_transform, inPlace=False)
-    final_transform = rmethod.Execute(fimage, mimage)
+    final_transform = rmethod.Execute(fixed_image, moving_image)
     print('-> coregistered')
 
-    mresampled = sitk.Resample(
-        mimage, fimage, final_transform, sitk.sitkLinear, .0,
-        mimage.GetPixelID())
+    moving_image = sitk.Resample(
+        moving_image, fixed_image, final_transform, sitk.sitkLinear, .0,
+        moving_image.GetPixelID())
+    moving_image = sitk.Cast(moving_image, sitk.sitkInt16)
     print('-> resampled')
 
-    sitk.WriteImage(mresampled, rpath)
+    sitk.WriteImage(moving_image, moving_path)
     print('-> exported')
 
 
 def main(args):
-  coregister(args.workdir, args.fixed, args.moving, args.resampled)
+  coregister(args.rootdir, args.fixed, args.moving)
 
 
 if __name__ == '__main__':
   parser = argparse.ArgumentParser()
-  parser.add_argument('workdir')
+  parser.add_argument('rootdir')
   parser.add_argument('--fixed', default='ct')
-  parser.add_argument('--moving', default='mr_T1')
-  parser.add_argument('--resampled', default='mr_co')
+  parser.add_argument('--moving', default='t1')
 
   main(parser.parse_args())
